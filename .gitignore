@@ -1,3 +1,5 @@
 _site
 node_modules
 .DS_Store
+d3.js
+d3.min.js

@@ -1303,7 +1303,7 @@
       x: 0,
       y: 0,
       k: 1
-    }, translate0, center0, center, size = [ 960, 500 ], scaleExtent = d3_behavior_zoomInfinity, duration = 250, zooming = 0, mousedown = "mousedown.zoom", mousemove = "mousemove.zoom", mouseup = "mouseup.zoom", mousewheelTimer, touchstart = "touchstart.zoom", touchtime, event = d3_eventDispatch(zoom, "zoomstart", "zoom", "zoomend"), x0, x1, y0, y1;
+    }, center, center0, duration = 250, event = d3_eventDispatch(zoom, "zoomstart", "zoom", "zoomend"), mousedown = "mousedown.zoom", mousemove = "mousemove.zoom", mouseup = "mouseup.zoom", mousewheelTimer, scale, scaleExtent = d3_behavior_zoomInfinity, size = [ 960, 500 ], touchstart = "touchstart.zoom", touchtime, translate0, x0, x1, xExtent = d3_behavior_scaleInfinity, y0, y1, yExtent = d3_behavior_scaleInfinity, zooming = 0;
     if (!d3_behavior_zoomWheel) {
       d3_behavior_zoomWheel = "onwheel" in d3_document ? (d3_behavior_zoomDelta = function() {
         return -d3.event.deltaY * (d3.event.deltaMode ? 120 : 1);
@@ -1350,6 +1350,16 @@
           zoomended(dispatch);
         }
       });
+    };
+    zoom.xExtent = function(x) {
+      if (!arguments.length) return xExtent;
+      xExtent = x == null ? d3_behavior_scaleInfinity : x.map(Number);
+      return zoom;
+    };
+    zoom.yExtent = function(x) {
+      if (!arguments.length) return xExtent;
+      yExtent = x == null ? d3_behavior_scaleInfinity : x.map(Number);
+      return zoom;
     };
     zoom.translate = function(_) {
       if (!arguments.length) return [ view.x, view.y ];
@@ -1421,11 +1431,13 @@
     }
     function scaleTo(s) {
       view.k = Math.max(scaleExtent[0], Math.min(scaleExtent[1], s));
+      rescale();
     }
     function translateTo(p, l) {
       l = point(l);
       view.x += p[0] - l[0];
       view.y += p[1] - l[1];
+      rescale();
     }
     function zoomTo(that, p, l, k) {
       that.__chart__ = {
@@ -1439,13 +1451,28 @@
       if (duration > 0) that = that.transition().duration(duration);
       that.call(zoom.event);
     }
-    function rescale() {
-      if (x1) x1.domain(x0.range().map(function(x) {
-        return (x - view.x) / view.k;
-      }).map(x0.invert));
-      if (y1) y1.domain(y0.range().map(function(y) {
-        return (y - view.y) / view.k;
-      }).map(y0.invert));
+    function rescale(dim) {
+      if (dim == undefined) {
+        rescale(0);
+        rescale(1);
+        return;
+      }
+      var s0 = dim ? y0 : x0;
+      if (!s0) return;
+      var range0 = s0.range(), s1 = dim ? y1 : x1, extent = dim ? yExtent : xExtent;
+      scale = Math.max(scale, Math.abs((range0[0] - range0[range0.length - 1]) / (s0(extent[0]) - s0(extent[1]))));
+      function calcDomain() {
+        return range0.map(function(r) {
+          return (r - translate[dim]) / scale;
+        }).map(s0.invert);
+      }
+      var domain = calcDomain();
+      if (domain[0] < extent[0]) {
+        translate[dim] = range0[0] - s0(extent[0]) * scale;
+      } else if (domain[domain.length - 1] > extent[1]) {
+        translate[dim] = range0[range0.length - 1] - s0(extent[1]) * scale;
+      }
+      s1.domain(calcDomain());
     }
     function zoomstarted(dispatch) {
       if (!zooming++) dispatch({
@@ -1569,7 +1596,7 @@
     }
     return d3.rebind(zoom, event, "on");
   };
-  var d3_behavior_zoomInfinity = [ 0, Infinity ], d3_behavior_zoomDelta, d3_behavior_zoomWheel;
+  var d3_behavior_zoomInfinity = [ 0, Infinity ], d3_behavior_zoomDelta, d3_behavior_scaleInfinity = [ -Infinity, Infinity ], d3_behavior_zoomWheel;
   d3.color = d3_color;
   function d3_color() {}
   d3_color.prototype.toString = function() {

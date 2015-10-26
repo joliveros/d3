@@ -10,24 +10,26 @@ import "behavior";
 
 d3.behavior.zoom = function() {
   var view = {x: 0, y: 0, k: 1},
-      translate0, // translate when we started zooming (to avoid drift)
-      center0, // implicit desired position of translate0 after zooming
       center, // explicit desired position of translate0 after zooming
-      size = [960, 500], // viewport size; required for zoom interpolation
-      scaleExtent = d3_behavior_zoomInfinity,
+      center0, // implicit desired position of translate0 after zooming
       duration = 250,
-      zooming = 0,
+      event = d3_eventDispatch(zoom, "zoomstart", "zoom", "zoomend"),
       mousedown = "mousedown.zoom",
       mousemove = "mousemove.zoom",
       mouseup = "mouseup.zoom",
       mousewheelTimer,
+      scaleExtent = d3_behavior_zoomInfinity,
+      size = [960, 500], // viewport size; required for zoom interpolation
       touchstart = "touchstart.zoom",
       touchtime, // time of last touchstart (to detect double-tap)
-      event = d3_eventDispatch(zoom, "zoomstart", "zoom", "zoomend"),
+      translate0, // translate when we started zooming (to avoid drift)
       x0,
       x1,
+      xExtent = d3_behavior_scaleInfinity,
       y0,
-      y1;
+      y1,
+      yExtent = d3_behavior_scaleInfinity,
+      zooming = 0
 
   // Lazily determine the DOM’s support for Wheel events.
   // https://developer.mozilla.org/en-US/docs/Mozilla_event_reference/wheel
@@ -83,7 +85,16 @@ d3.behavior.zoom = function() {
       }
     });
   }
-
+  zoom.xExtent = function(x) {
+    if (!arguments.length) return xExtent;
+    xExtent = (x == null) ? d3_behavior_scaleInfinity : x.map(Number);
+    return zoom;
+  }
+  zoom.yExtent = function(x) {
+    if (!arguments.length) return xExtent;
+    yExtent = (x == null) ? d3_behavior_scaleInfinity : x.map(Number);
+    return zoom;
+  }
   zoom.translate = function(_) {
     if (!arguments.length) return [view.x, view.y];
     view = {x: +_[0], y: +_[1], k: view.k}; // copy-on-write
@@ -148,12 +159,14 @@ d3.behavior.zoom = function() {
 
   function scaleTo(s) {
     view.k = Math.max(scaleExtent[0], Math.min(scaleExtent[1], s));
+    rescale();
   }
 
   function translateTo(p, l) {
     l = point(l);
     view.x += p[0] - l[0];
     view.y += p[1] - l[1];
+    rescale();
   }
 
   function zoomTo(that, p, l, k) {
@@ -167,11 +180,57 @@ d3.behavior.zoom = function() {
     that.call(zoom.event);
   }
 
-  function rescale() {
-    if (x1) x1.domain(x0.range().map(function(x) { return (x - view.x) / view.k; }).map(x0.invert));
-    if (y1) y1.domain(y0.range().map(function(y) { return (y - view.y) / view.k; }).map(y0.invert));
-  }
+  function rescale(dim) {
+    // console.log('#rescale %s', dim);
+    // var _view = JSON.parse(JSON.stringify(view));
+    if (dim == undefined) {
+      rescale('x');
+      rescale('y');
+      return;
+    }
 
+    var s0 = dim === 'y' ? y0 : x0;
+    if (!s0) return;
+    var range0 = s0.range(),
+        s1 = dim === 'y' ? y1 : x1,
+        extent = dim === 'y' ? yExtent : xExtent;
+
+    // If we can't satisfy both ends of the extent simultaneously, zoom in to the
+    // point where we can.
+    var scale = view.k;
+    // console.log('rescale %s', scale);
+    var rangeDiff = range0[0] - range0[range0.length-1];
+    var extentDiff = s0(extent[0]) - s0(extent[1]);
+    var extentScale = Math.abs(rangeDiff/extentDiff);
+    scale = Math.max (scale, extentScale);
+
+    // console.log('rescale %s', JSON.stringify({
+    //   rangeDiff: rangeDiff,
+    //   extentDiff: extentDiff,
+    //   extentScale: extentScale,
+    //   scale: scale
+    // }));
+
+    function calcDomain() {
+      return range0.map(function(r) { return (r - view[dim]) / scale; }).map(s0.invert);
+    }
+    var domain = calcDomain();
+    // console.log(JSON.stringify({
+    //   domain: domain[0],
+    //   extent: extent[0]
+    // }));
+    if (domain[0] < extent[0]) {
+      view[dim] = range0[0] - (s0(extent[0]) * scale);
+    } else if (domain[domain.length-1] > extent[1]) {
+      view[dim] = range0[range0.length-1] - (s0(extent[1]) * scale);
+    }
+    s1.domain(calcDomain());
+    view.k = scale;
+    // if (x1) x1.domain(x0.range().map(function(x) { return (x - view.x) / view.k; }).map(x0.invert));
+    // if (y1) y1.domain(y0.range().map(function(y) { return (y - view.y) / view.k; }).map(y0.invert));
+    // console.log(JSON.stringify(view));
+    // console.log(JSON.stringify(view));
+  }
   function zoomstarted(dispatch) {
     if (!zooming++) dispatch({type: "zoomstart"});
   }
@@ -345,4 +404,5 @@ d3.behavior.zoom = function() {
 
 var d3_behavior_zoomInfinity = [0, Infinity], // default scale extent
     d3_behavior_zoomDelta, // initialized lazily
+    d3_behavior_scaleInfinity = [-Infinity, Infinity],
     d3_behavior_zoomWheel;
